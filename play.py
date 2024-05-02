@@ -104,14 +104,19 @@ def main(opt):
     # configure policy
     policy = partial(_epsilon_greedy, model=model, eps=0.001)
     ep_returns = [0 for _ in range(opt.episodes)]
+    observations = list(ep_returns)
 
     for ep in range(opt.episodes):
         obs, done = env.reset(), False
+        observations[ep] += 1
         while not done:
             action, _ = policy(obs)
             obs, reward, done, _ = env.step(action)
             ep_returns[ep] += reward
-        print(f"{ep:02d})  Gt: {ep_returns[ep]:7.1f}")
+            observations[ep] += 1
+        print(f"{ep:02d})  Gt: {ep_returns[ep]:7.1f}   Observations: {observations[ep]}")
+
+    print(f'Mean return: {sum(ep_returns) / len(ep_returns):7.1f}; Mean number of observations: {sum(observations) / len(observations)}')
 
 
 if __name__ == "__main__":
