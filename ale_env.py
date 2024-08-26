@@ -92,11 +92,6 @@ class ALEModern:
         if sdl:
             self.ale.setBool("sound", True)
             self.ale.setBool("display_screen", True)
-        if record_dir is not None:
-            self.ale.setString("record_screen_dir", record_dir)
-            self.ale.setString(
-                "record_sound_filename", os.path.join(record_dir, "sound.wav")
-            )
 
         self.ale.loadROM(_get_rom(self.game_name))
 
@@ -116,10 +111,22 @@ class ALEModern:
         self.actions = dict([i, e] for i, e in zip(range(len(actions)), actions))
         self.action_space = Discrete(len(self.actions))
 
-    def _get_state(self):
+        self.record_dir = record_dir
+        self.episode_id = -1
+        self.observation_id = None
+
+    def _get_episode_dir_path(self):
+        return os.path.join(self.record_dir, f'ep_{self.episode_id}')
+
+    def _get_state(self, record=False):
         state = cv2.resize(
             self.ale.getScreenGrayscale(), (84, 84), interpolation=cv2.INTER_AREA,
         )
+        if record and self.record_dir is not None:
+            path = os.path.join(self._get_episode_dir_path(), f'obs_{self.observation_id}.png')
+            cv2.imwrite(path, cv2.cvtColor(self.ale.getScreenRGB(), cv2.COLOR_RGB2BGR))
+            self.observation_id += 1
+
         return torch.tensor(state, dtype=torch.uint8, device=self.device)
 
     def _reset_buffer(self):
@@ -133,9 +140,13 @@ class ALEModern:
         # reset internals
         self._reset_buffer()
         self.ale.reset_game()
+        self.episode_id += 1
+        self.observation_id = -1
+        if self.record_dir is not None:
+            os.makedirs(self._get_episode_dir_path(), exist_ok=False)
 
         # process and return "initial" state
-        observation = self._get_state()
+        observation = self._get_state(record=True)
         self.state_buffer.append(observation)
         return torch.stack(list(self.state_buffer), 0).unsqueeze(0).byte()
 
@@ -153,9 +164,12 @@ class ALEModern:
         for t in range(4):
             reward += self.ale.act(self.actions.get(action))
             if t == 2:
-                frame_buffer[0] = self._get_state()
+                frame_buffer[0] = self._get_state(record=True)
             elif t == 3:
-                frame_buffer[1] = self._get_state()
+                frame_buffer[1] = self._get_state(record=True)
+            else:
+                self._get_state(record=True)
+
             done = self.ale.game_over()
             if done:
                 break
